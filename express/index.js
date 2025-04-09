@@ -1,14 +1,16 @@
+require('dotenv').config();
+console.log("MONGODB_URI:", process.env.MONGODB_URI);
+
 const express = require("express");
 const bodyParser = require('body-parser');
 const axios = require("axios");
 const { MongoClient, ServerApiVersion } = require('mongodb'); // MongoClient lets us connect to our database
-const cors = require('cors');
+const cors = require('cors'); 
+
 
 /* INITIALIZE DATABASE */
-const password = "lilyofthevalley"
-const clusterName = "floriography-dictionary"
-const uri = "mongodb+srv://hannie:lilyofthevalley@floriography-dictionary.ujtny.mongodb.net/?retryWrites=true&w=majority&appName=floriography-dictionary"
-const DB_NAME = "hannie"
+const uri = process.env.MONGODB_URI;
+const DB_NAME = process.env.DB_NAME;
 const CONNECTION_TIMEOUT = 5000;
 
 const client = new MongoClient(uri, {
@@ -58,6 +60,14 @@ app.listen(port, () => {
 async function insertFlower (newFlower) {
   try {
       const flowersCollection = client.db(DB_NAME).collection("flowers");
+
+      // Ensure color is an array
+      if (Array.isArray(newFlower.color)) {
+        newFlower.color = newFlower.color.map(color => color.trim());  // Sanitize colors (trim extra spaces)
+      } else {
+        newFlower.color = [newFlower.color.trim()];  // If it's a single color, make it an array
+      }
+
       const result = await flowersCollection.insertOne(newFlower);
 
       return await flowersCollection.findOne({ _id: result.insertedId });
@@ -76,7 +86,25 @@ async function getAllFlowers () {
 async function getFlower (name) {
   // get flower collection and find flowers that match name
   const flowersCollection = client.db(DB_NAME).collection("flowers");
-  return await flowersCollection.find({ name: name }).toArray();
+  return await flowersCollection.find({ 
+    name: { $regex: new RegExp(name, 'i') } // Case-insensitive regex search
+  }).toArray();
+};
+
+async function getFlowerByColor (color) {
+  // get flower collection and find flowers that match name
+  const flowersCollection = client.db(DB_NAME).collection("flowers");
+  return await flowersCollection.find({ 
+    color: { $regex: new RegExp(color, 'i') } // Case-insensitive search
+  }).toArray();
+};
+
+async function getFlowerByMeaning (meaning) {
+  // get flower collection and find flowers that match name
+  const flowersCollection = client.db(DB_NAME).collection("flowers");
+  return await flowersCollection.find({ 
+    meaning: { $regex: new RegExp(meaning, 'i') } // Case-insensitive search
+  }).toArray();
 };
 
 /* WEEK 4: DATABASE ROUTES */
@@ -88,7 +116,7 @@ route.post('/flowers', async (req, res) => {
           return res.status(400).json({ error: "Missing required fields" });
       }
 
-      const newFlower = { name, color, meaning };
+      const newFlower = { name, color: Array.isArray(color) ? color : [color], meaning };
 
       const createdFlower = await insertFlower(newFlower);
       console.log("Inserted new flower:", createdFlower);
@@ -117,6 +145,25 @@ route.delete('/flowers/:name?', async (req, res) => {
   }
 });
 
+route.get('/flowers/meaning/:meaning?', async (req, res) => {
+  try {
+    const meaning = req.params.meaning;
+    let flowers;
+
+    if (meaning) {
+      flowers = await getFlowerByMeaning(meaning); // search by meaning
+    } else {
+      flowers = await getAllFlowers(); // get all flowers if no meaning is provided
+    }
+
+    console.log("Fetched flowers:", flowers);
+    res.status(200).json(flowers);
+  } catch (error) {
+    console.error("Failed to fetch flowers by meaning:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 
 route.get('/flowers/:name?', async (req, res) => {
   try {
@@ -134,6 +181,27 @@ route.get('/flowers/:name?', async (req, res) => {
       res.status(200).json(flowers);
   } catch (error) {
       console.error("Failed to fetch all flowers:", error);
+      res.status(500).json({ error: message });
+  }
+});
+
+
+route.get('/flowers/color/:color?', async (req, res) => {
+  try {
+      const color = req.params.color;
+      let flowers;
+
+      if (color) {
+          flowers = await getFlowerByColor(color);
+      }
+      else {
+          flowers = await getAllFlowers(); // get flowers
+      }
+  
+      console.log("Fetched flowers:", flowers);
+      res.status(200).json(flowers);
+  } catch (error) {
+      console.error("Failed to fetch flowers by color:", error);
       res.status(500).json({ error: message });
   }
 });
